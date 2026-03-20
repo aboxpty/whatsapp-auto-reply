@@ -6,7 +6,7 @@ import sys
 
 app = Flask(__name__)
 
-# Logging visible en Render
+# 🔹 LOGS (IMPORTANTE PARA RENDER)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -15,11 +15,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# WhatsApp
+# 🔐 WhatsApp
 TOKEN = os.environ.get("TOKEN")
 PHONE_ID = os.environ.get("PHONE_ID")
 
-# Odoo
+# 🔐 Odoo
 ODOO_URL = os.environ.get("ODOO_URL")
 ODOO_DB = os.environ.get("ODOO_DB")
 ODOO_USER = os.environ.get("ODOO_USER")
@@ -27,20 +27,20 @@ ODOO_API_KEY = os.environ.get("ODOO_API_KEY")
 
 VERIFY_TOKEN = "ABOX_WHATSAPP_2026"
 
-
+# 🔹 VERIFICACIÓN WEBHOOK
 @app.route("/webhook", methods=["GET"])
 def verify():
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    logger.info("GET webhook verify hit")
+    logger.info("GET webhook verify")
 
     if token == VERIFY_TOKEN:
-        logger.info("Webhook verificado correctamente")
         return challenge, 200
     return "Error", 403
 
 
+# 🔹 LOGIN ODOO
 def login_odoo():
     try:
         url = f"{ODOO_URL}/jsonrpc"
@@ -54,19 +54,22 @@ def login_odoo():
             }
         }
 
-        res = requests.post(url, json=payload, timeout=30).json()
+        res = requests.post(url, json=payload).json()
         logger.info(f"LOGIN RESPONSE ODOO: {res}")
+
         return res.get("result")
 
     except Exception as e:
-        logger.exception(f"LOGIN ERROR ODOO: {e}")
+        logger.exception(f"LOGIN ERROR: {e}")
         return None
 
 
+# 🔹 BUSCAR O CREAR CONTACTO
 def get_or_create_partner(uid, numero):
     try:
         url = f"{ODOO_URL}/jsonrpc"
 
+        # Buscar contacto
         search_payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -84,13 +87,15 @@ def get_or_create_partner(uid, numero):
             }
         }
 
-        res = requests.post(url, json=search_payload, timeout=30).json()
+        res = requests.post(url, json=search_payload).json()
         logger.info(f"SEARCH RESPONSE ODOO: {res}")
 
         ids = res.get("result")
+
         if ids:
             return ids[0]
 
+        # Crear contacto en ABOX PTY (company_id = 2)
         create_payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -105,21 +110,25 @@ def get_or_create_partner(uid, numero):
                     "create",
                     [{
                         "name": numero,
-                        "mobile": numero
+                        "mobile": numero,
+                        "company_id": 2,
+                        "company_type": "person"
                     }]
                 ]
             }
         }
 
-        res = requests.post(url, json=create_payload, timeout=30).json()
+        res = requests.post(url, json=create_payload).json()
         logger.info(f"CREATE RESPONSE ODOO: {res}")
+
         return res.get("result")
 
     except Exception as e:
-        logger.exception(f"PARTNER ERROR ODOO: {e}")
+        logger.exception(f"PARTNER ERROR: {e}")
         return None
 
 
+# 🔹 GUARDAR MENSAJE
 def save_message(uid, partner_id, texto):
     try:
         url = f"{ODOO_URL}/jsonrpc"
@@ -145,13 +154,14 @@ def save_message(uid, partner_id, texto):
             }
         }
 
-        res = requests.post(url, json=payload, timeout=30).json()
+        res = requests.post(url, json=payload).json()
         logger.info(f"MESSAGE RESPONSE ODOO: {res}")
 
     except Exception as e:
-        logger.exception(f"MESSAGE ERROR ODOO: {e}")
+        logger.exception(f"MESSAGE ERROR: {e}")
 
 
+# 🔹 WEBHOOK PRINCIPAL
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
@@ -162,6 +172,7 @@ def webhook():
             value = data["entry"][0]["changes"][0]["value"]
             logger.info(f"VALUE: {value}")
 
+            # Solo si hay mensajes
             if "messages" in value:
                 mensaje_data = value["messages"][0]
                 numero = mensaje_data["from"]
@@ -170,6 +181,7 @@ def webhook():
                 logger.info(f"NUMERO: {numero}")
                 logger.info(f"MENSAJE: {texto}")
 
+                # 🔹 RESPUESTA AUTOMÁTICA
                 mensaje = """Hola 👋
 
 Este número es exclusivo para notificaciones automáticas de ABOX PTY 📦
@@ -181,10 +193,12 @@ Para atención personalizada escríbenos al:
 """
 
                 url = f"https://graph.facebook.com/v18.0/{PHONE_ID}/messages"
+
                 headers = {
                     "Authorization": f"Bearer {TOKEN}",
                     "Content-Type": "application/json"
                 }
+
                 payload = {
                     "messaging_product": "whatsapp",
                     "to": numero,
@@ -192,26 +206,29 @@ Para atención personalizada escríbenos al:
                     "text": {"body": mensaje}
                 }
 
-                wa_res = requests.post(url, headers=headers, json=payload, timeout=30)
+                wa_res = requests.post(url, headers=headers, json=payload)
                 logger.info(f"WHATSAPP RESPONSE: {wa_res.status_code} {wa_res.text}")
 
+                # 🔹 ODOO
                 uid = login_odoo()
                 logger.info(f"UID ODOO: {uid}")
 
                 if uid:
                     partner_id = get_or_create_partner(uid, numero)
-                    logger.info(f"PARTNER ID ODOO: {partner_id}")
+                    logger.info(f"PARTNER ID: {partner_id}")
 
                     if partner_id and texto:
                         save_message(uid, partner_id, texto)
+
             else:
-                logger.info("Evento recibido sin messages")
+                logger.info("Evento sin mensajes (status u otro)")
+
     except Exception as e:
-        logger.exception(f"ERROR GENERAL WEBHOOK: {e}")
+        logger.exception(f"ERROR GENERAL: {e}")
 
     return "ok", 200
 
 
 if __name__ == "__main__":
-    logger.info("Iniciando app Flask...")
+    logger.info("Iniciando servidor Flask...")
     app.run(host="0.0.0.0", port=5000)
