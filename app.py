@@ -8,7 +8,7 @@ app = Flask(__name__)
 TOKEN = os.environ.get("TOKEN")
 PHONE_ID = os.environ.get("PHONE_ID")
 
-# 🔐 Odoo
+# 🔐 Odoo (variables en Render)
 ODOO_URL = os.environ.get("ODOO_URL")
 ODOO_DB = os.environ.get("ODOO_DB")
 ODOO_USER = os.environ.get("ODOO_USER")
@@ -29,121 +29,107 @@ def verify():
 
 # 🔹 LOGIN ODOO
 def login_odoo():
-    try:
-        url = f"{ODOO_URL}/jsonrpc"
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "params": {
-                "service": "common",
-                "method": "login",
-                "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
-            }
+    url = f"{ODOO_URL}/jsonrpc"
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "common",
+            "method": "login",
+            "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
         }
+    }
 
-        res = requests.post(url, json=payload).json()
-        print("LOGIN RESPONSE:", res)
+    res = requests.post(url, json=payload).json()
+    print("LOGIN RESPONSE:", res)
 
-        return res.get("result")
-
-    except Exception as e:
-        print("LOGIN ERROR:", e)
-        return None
+    return res.get("result")
 
 # 🔹 BUSCAR O CREAR CONTACTO
 def get_or_create_partner(uid, numero):
-    try:
-        url = f"{ODOO_URL}/jsonrpc"
+    url = f"{ODOO_URL}/jsonrpc"
 
-        # Buscar
-        search_payload = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "params": {
-                "service": "object",
-                "method": "execute_kw",
-                "args": [
-                    ODOO_DB,
-                    uid,
-                    ODOO_API_KEY,
-                    "res.partner",
-                    "search",
-                    [[["mobile", "=", numero]]]
-                ]
-            }
+    # Buscar contacto
+    search_payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                ODOO_DB,
+                uid,
+                ODOO_API_KEY,
+                "res.partner",
+                "search",
+                [[["mobile", "=", numero]]]
+            ]
         }
+    }
 
-        res = requests.post(url, json=search_payload).json()
-        print("SEARCH RESPONSE:", res)
+    res = requests.post(url, json=search_payload).json()
+    print("SEARCH RESPONSE:", res)
 
-        ids = res.get("result")
+    ids = res.get("result")
 
-        if ids:
-            return ids[0]
+    if ids:
+        return ids[0]
 
-        # Crear
-        create_payload = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "params": {
-                "service": "object",
-                "method": "execute_kw",
-                "args": [
-                    ODOO_DB,
-                    uid,
-                    ODOO_API_KEY,
-                    "res.partner",
-                    "create",
-                    [{
-                        "name": numero,
-                        "mobile": numero
-                    }]
-                ]
-            }
+    # Crear contacto
+    create_payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                ODOO_DB,
+                uid,
+                ODOO_API_KEY,
+                "res.partner",
+                "create",
+                [{
+                    "name": numero,
+                    "mobile": numero
+                }]
+            ]
         }
+    }
 
-        res = requests.post(url, json=create_payload).json()
-        print("CREATE RESPONSE:", res)
+    res = requests.post(url, json=create_payload).json()
+    print("CREATE RESPONSE:", res)
 
-        return res.get("result")
+    return res.get("result")
 
-    except Exception as e:
-        print("PARTNER ERROR:", e)
-        return None
-
-# 🔹 GUARDAR MENSAJE
+# 🔹 GUARDAR MENSAJE EN ODOO
 def save_message(uid, partner_id, texto):
-    try:
-        url = f"{ODOO_URL}/jsonrpc"
+    url = f"{ODOO_URL}/jsonrpc"
 
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "params": {
-                "service": "object",
-                "method": "execute_kw",
-                "args": [
-                    ODOO_DB,
-                    uid,
-                    ODOO_API_KEY,
-                    "mail.message",
-                    "create",
-                    [{
-                        "body": texto,
-                        "message_type": "comment",
-                        "partner_ids": [(4, partner_id)]
-                    }]
-                ]
-            }
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "object",
+            "method": "execute_kw",
+            "args": [
+                ODOO_DB,
+                uid,
+                ODOO_API_KEY,
+                "mail.message",
+                "create",
+                [{
+                    "body": texto,
+                    "message_type": "comment",
+                    "partner_ids": [(4, partner_id)]
+                }]
+            ]
         }
+    }
 
-        res = requests.post(url, json=payload).json()
-        print("MESSAGE RESPONSE:", res)
+    res = requests.post(url, json=payload).json()
+    print("MESSAGE RESPONSE:", res)
 
-    except Exception as e:
-        print("MESSAGE ERROR:", e)
-
-# 🔹 WEBHOOK
+# 🔹 WEBHOOK PRINCIPAL
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -187,8 +173,8 @@ Para atención personalizada escríbenos al:
                     "text": {"body": mensaje}
                 }
 
-                wa_response = requests.post(url, headers=headers, json=payload)
-                print("WHATSAPP RESPONSE:", wa_response.status_code, wa_response.text)
+                wa_res = requests.post(url, headers=headers, json=payload)
+                print("WHATSAPP RESPONSE:", wa_res.status_code, wa_res.text)
 
                 # 🔹 ODOO
                 uid = login_odoo()
@@ -205,6 +191,7 @@ Para atención personalizada escríbenos al:
         print("ERROR GENERAL:", e)
 
     return "ok", 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
