@@ -6,7 +6,7 @@ import sys
 
 app = Flask(__name__)
 
-# 🔹 LOGS (para Render)
+# 🔹 LOGS
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -28,7 +28,7 @@ ODOO_API_KEY = os.environ.get("ODOO_API_KEY")
 VERIFY_TOKEN = "ABOX_WHATSAPP_2026"
 
 
-# 🔹 Verificación webhook
+# 🔹 VERIFICACIÓN
 @app.route("/webhook", methods=["GET"])
 def verify():
     token = request.args.get("hub.verify_token")
@@ -39,36 +39,30 @@ def verify():
     return "Error", 403
 
 
-# 🔹 Login Odoo
+# 🔹 LOGIN ODOO
 def login_odoo():
-    try:
-        url = f"{ODOO_URL}/jsonrpc"
+    url = f"{ODOO_URL}/jsonrpc"
 
-        payload = {
-            "jsonrpc": "2.0",
-            "method": "call",
-            "params": {
-                "service": "common",
-                "method": "login",
-                "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
-            }
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "call",
+        "params": {
+            "service": "common",
+            "method": "login",
+            "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
         }
+    }
 
-        res = requests.post(url, json=payload).json()
-        logger.info(f"LOGIN ODOO: {res}")
+    res = requests.post(url, json=payload).json()
+    logger.info(f"LOGIN: {res}")
 
-        return res.get("result")
-
-    except Exception as e:
-        logger.exception(f"LOGIN ERROR: {e}")
-        return None
+    return res.get("result")
 
 
-# 🔹 Buscar o crear contacto (ABOX PTY)
+# 🔹 BUSCAR O CREAR CONTACTO (ABOX)
 def get_or_create_partner(uid, numero):
     url = f"{ODOO_URL}/jsonrpc"
 
-    # Buscar
     search_payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -92,7 +86,6 @@ def get_or_create_partner(uid, numero):
     if ids:
         return ids[0]
 
-    # Crear contacto en ABOX (company_id = 2)
     create_payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -119,13 +112,13 @@ def get_or_create_partner(uid, numero):
     return res.get("result")
 
 
-# 🔹 Enviar a DISCUSS (Odoo moderno)
+# 🔹 CHAT UNIFICADO (DISCUSS)
 def send_to_discuss(uid, partner_id, texto):
     try:
         url = f"{ODOO_URL}/jsonrpc"
 
-        # Crear canal de chat
-        create_channel_payload = {
+        # 🔹 1. BUSCAR SI YA EXISTE CHAT
+        search_payload = {
             "jsonrpc": "2.0",
             "method": "call",
             "params": {
@@ -136,25 +129,48 @@ def send_to_discuss(uid, partner_id, texto):
                     uid,
                     ODOO_API_KEY,
                     "discuss.channel",
-                    "create",
-                    [{
-                        "name": f"WhatsApp {partner_id}",
-                        "channel_type": "chat",
-                        "channel_partner_ids": [(4, partner_id)]
-                    }]
+                    "search",
+                    [[["channel_partner_ids", "in", [partner_id]]]]
                 ]
             }
         }
 
-        res = requests.post(url, json=create_channel_payload).json()
-        logger.info(f"CHANNEL CREATE: {res}")
+        res = requests.post(url, json=search_payload).json()
+        channel_ids = res.get("result")
 
-        channel_id = res.get("result")
+        if channel_ids:
+            channel_id = channel_ids[0]
+            logger.info(f"CANAL EXISTENTE: {channel_id}")
 
-        if not channel_id:
-            return
+        else:
+            # 🔹 2. CREAR NUEVO CHAT
+            create_payload = {
+                "jsonrpc": "2.0",
+                "method": "call",
+                "params": {
+                    "service": "object",
+                    "method": "execute_kw",
+                    "args": [
+                        ODOO_DB,
+                        uid,
+                        ODOO_API_KEY,
+                        "discuss.channel",
+                        "create",
+                        [{
+                            "name": f"WhatsApp {partner_id}",
+                            "channel_type": "chat",
+                            "channel_partner_ids": [(4, partner_id)]
+                        }]
+                    ]
+                }
+            }
 
-        # Enviar mensaje al chat
+            res = requests.post(url, json=create_payload).json()
+            channel_id = res.get("result")
+
+            logger.info(f"CANAL NUEVO: {channel_id}")
+
+        # 🔹 3. ENVIAR MENSAJE
         message_payload = {
             "jsonrpc": "2.0",
             "method": "call",
@@ -177,13 +193,13 @@ def send_to_discuss(uid, partner_id, texto):
         }
 
         res = requests.post(url, json=message_payload).json()
-        logger.info(f"DISCUSS MESSAGE: {res}")
+        logger.info(f"MENSAJE ENVIADO: {res}")
 
     except Exception as e:
-        logger.exception(f"DISCUSS ERROR: {e}")
+        logger.exception(f"ERROR DISCUSS: {e}")
 
 
-# 🔹 Webhook principal
+# 🔹 WEBHOOK
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
@@ -202,7 +218,7 @@ def webhook():
                 logger.info(f"NUMERO: {numero}")
                 logger.info(f"TEXTO: {texto}")
 
-                # 🔹 Respuesta automática WhatsApp
+                # 🔹 RESPUESTA AUTOMÁTICA
                 mensaje = """Hola 👋
 
 Este número es exclusivo para notificaciones automáticas de ABOX PTY 📦
@@ -229,7 +245,7 @@ Para atención personalizada:
 
                 requests.post(url, headers=headers, json=payload)
 
-                # 🔹 Odoo
+                # 🔹 ODOO
                 uid = login_odoo()
 
                 if uid:
@@ -239,7 +255,7 @@ Para atención personalizada:
                         send_to_discuss(uid, partner_id, texto)
 
             else:
-                logger.info("Evento sin messages")
+                logger.info("Evento sin mensajes")
 
     except Exception as e:
         logger.exception(f"ERROR GENERAL: {e}")
