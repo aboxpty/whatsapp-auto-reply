@@ -34,7 +34,7 @@ def webhook():
 
 Este número es exclusivo para notificaciones automáticas de ABOX PTY 📦
 
-Para atención personalizada al:
+Para atención personalizada escribe al:
 👉 https://wa.me/50768181081
 
 ¡Con gusto te atenderemos! 🙌
