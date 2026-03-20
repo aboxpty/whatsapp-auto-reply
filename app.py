@@ -6,7 +6,7 @@ import sys
 
 app = Flask(__name__)
 
-# 🔹 LOGS
+# 🔹 LOGS (para Render)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
@@ -28,7 +28,7 @@ ODOO_API_KEY = os.environ.get("ODOO_API_KEY")
 VERIFY_TOKEN = "ABOX_WHATSAPP_2026"
 
 
-# 🔹 VERIFICACIÓN
+# 🔹 Verificación webhook
 @app.route("/webhook", methods=["GET"])
 def verify():
     token = request.args.get("hub.verify_token")
@@ -39,27 +39,32 @@ def verify():
     return "Error", 403
 
 
-# 🔹 LOGIN ODOO
+# 🔹 Login Odoo
 def login_odoo():
-    url = f"{ODOO_URL}/jsonrpc"
+    try:
+        url = f"{ODOO_URL}/jsonrpc"
 
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "call",
-        "params": {
-            "service": "common",
-            "method": "login",
-            "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "common",
+                "method": "login",
+                "args": [ODOO_DB, ODOO_USER, ODOO_API_KEY]
+            }
         }
-    }
 
-    res = requests.post(url, json=payload).json()
-    logger.info(f"LOGIN: {res}")
+        res = requests.post(url, json=payload).json()
+        logger.info(f"LOGIN ODOO: {res}")
 
-    return res.get("result")
+        return res.get("result")
+
+    except Exception as e:
+        logger.exception(f"LOGIN ERROR: {e}")
+        return None
 
 
-# 🔹 BUSCAR / CREAR CONTACTO (ABOX PTY)
+# 🔹 Buscar o crear contacto (ABOX PTY)
 def get_or_create_partner(uid, numero):
     url = f"{ODOO_URL}/jsonrpc"
 
@@ -87,7 +92,7 @@ def get_or_create_partner(uid, numero):
     if ids:
         return ids[0]
 
-    # Crear en ABOX (company_id = 2)
+    # Crear contacto en ABOX (company_id = 2)
     create_payload = {
         "jsonrpc": "2.0",
         "method": "call",
@@ -114,64 +119,71 @@ def get_or_create_partner(uid, numero):
     return res.get("result")
 
 
-# 🔹 ENVIAR A DISCUSS (CHAT REAL)
+# 🔹 Enviar a DISCUSS (Odoo moderno)
 def send_to_discuss(uid, partner_id, texto):
-    url = f"{ODOO_URL}/jsonrpc"
+    try:
+        url = f"{ODOO_URL}/jsonrpc"
 
-    # Crear canal (chat)
-    create_channel_payload = {
-        "jsonrpc": "2.0",
-        "method": "call",
-        "params": {
-            "service": "object",
-            "method": "execute_kw",
-            "args": [
-                ODOO_DB,
-                uid,
-                ODOO_API_KEY,
-                "mail.channel",
-                "create",
-                [{
-                    "name": f"Chat {partner_id}",
-                    "channel_type": "chat",
-                    "channel_partner_ids": [(4, partner_id)]
-                }]
-            ]
+        # Crear canal de chat
+        create_channel_payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    ODOO_DB,
+                    uid,
+                    ODOO_API_KEY,
+                    "discuss.channel",
+                    "create",
+                    [{
+                        "name": f"WhatsApp {partner_id}",
+                        "channel_type": "chat",
+                        "channel_partner_ids": [(4, partner_id)]
+                    }]
+                ]
+            }
         }
-    }
 
-    res = requests.post(url, json=create_channel_payload).json()
-    channel_id = res.get("result")
+        res = requests.post(url, json=create_channel_payload).json()
+        logger.info(f"CHANNEL CREATE: {res}")
 
-    logger.info(f"CHANNEL: {channel_id}")
+        channel_id = res.get("result")
 
-    # Enviar mensaje
-    message_payload = {
-        "jsonrpc": "2.0",
-        "method": "call",
-        "params": {
-            "service": "object",
-            "method": "execute_kw",
-            "args": [
-                ODOO_DB,
-                uid,
-                ODOO_API_KEY,
-                "mail.channel",
-                "message_post",
-                [channel_id],
-                {
-                    "body": texto,
-                    "message_type": "comment"
-                }
-            ]
+        if not channel_id:
+            return
+
+        # Enviar mensaje al chat
+        message_payload = {
+            "jsonrpc": "2.0",
+            "method": "call",
+            "params": {
+                "service": "object",
+                "method": "execute_kw",
+                "args": [
+                    ODOO_DB,
+                    uid,
+                    ODOO_API_KEY,
+                    "discuss.channel",
+                    "message_post",
+                    [channel_id],
+                    {
+                        "body": texto,
+                        "message_type": "comment"
+                    }
+                ]
+            }
         }
-    }
 
-    res = requests.post(url, json=message_payload).json()
-    logger.info(f"DISCUSS MESSAGE: {res}")
+        res = requests.post(url, json=message_payload).json()
+        logger.info(f"DISCUSS MESSAGE: {res}")
+
+    except Exception as e:
+        logger.exception(f"DISCUSS ERROR: {e}")
 
 
-# 🔹 WEBHOOK
+# 🔹 Webhook principal
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.json
@@ -190,7 +202,7 @@ def webhook():
                 logger.info(f"NUMERO: {numero}")
                 logger.info(f"TEXTO: {texto}")
 
-                # 🔹 RESPUESTA WHATSAPP
+                # 🔹 Respuesta automática WhatsApp
                 mensaje = """Hola 👋
 
 Este número es exclusivo para notificaciones automáticas de ABOX PTY 📦
@@ -217,7 +229,7 @@ Para atención personalizada:
 
                 requests.post(url, headers=headers, json=payload)
 
-                # 🔹 ODOO
+                # 🔹 Odoo
                 uid = login_odoo()
 
                 if uid:
@@ -226,8 +238,11 @@ Para atención personalizada:
                     if partner_id:
                         send_to_discuss(uid, partner_id, texto)
 
+            else:
+                logger.info("Evento sin messages")
+
     except Exception as e:
-        logger.exception(f"ERROR: {e}")
+        logger.exception(f"ERROR GENERAL: {e}")
 
     return "ok", 200
 
