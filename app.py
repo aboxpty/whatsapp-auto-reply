@@ -4,14 +4,11 @@ import os
 
 app = Flask(__name__)
 
-# 🔐 Variables (configúralas en Render)
 TOKEN = os.environ.get("TOKEN")
 PHONE_ID = os.environ.get("PHONE_ID")
 
-# 🔑 Verify Token (debe ser igual en Meta)
 VERIFY_TOKEN = "ABOX_WHATSAPP_2026"
 
-# 🔹 Verificación del webhook
 @app.route('/webhook', methods=['GET'])
 def verify():
     token = request.args.get("hub.verify_token")
@@ -22,7 +19,6 @@ def verify():
     else:
         return "Error de verificación", 403
 
-# 🔹 Recibir mensajes y responder automáticamente
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -36,12 +32,12 @@ def webhook():
 
                 mensaje = """Hola 👋
 
-Este número es solo para notificaciones automáticas de ABOX 📦
+Este número es exclusivo para notificaciones automáticas de ABOX PTY 📦
 
-Para atención personalizada:
-👉 https://wa.me/68181081
+Para atención personalizada al:
+👉 https://wa.me/50768181081
 
-Gracias 🙌
+¡Con gusto te atenderemos! 🙌
 """
 
                 url = f"https://graph.facebook.com/v18.0/{PHONE_ID}/messages"
@@ -67,6 +63,5 @@ Gracias 🙌
 
     return "ok", 200
 
-# 🔹 Ejecutar servidor
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
